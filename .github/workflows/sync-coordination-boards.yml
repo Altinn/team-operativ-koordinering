@@ -1,0 +1,131 @@
+name: Sync coordination boards
+
+# Pulls issues matching each board's labels (in .github/boards.yml) into the
+# corresponding Projects v2 board.
+#
+# Design notes (learned the hard way):
+#   * `gh search issues` mis-parses qualifiers inside a positional query string,
+#     so we use FLAGS: --owner (repeatable, OR'd) and --label.
+#   * gh ANDs repeated --label, so to OR labels we run ONE search PER label and
+#     union the resulting issue URLs. Never pass multiple --label in one call
+#     expecting OR — it returns the AND (usually empty).
+#   * item-add is idempotent, so the union may contain an issue once per matching
+#     label; re-adding is a harmless no-op.
+#
+# REQUIRED SECRET: PROJECT_PAT
+#   Token that can (a) read issues in every searched org and (b) write items to
+#   the target projects. Classic PAT: scopes `repo` + `project`, from a user who
+#   is a member of every org in `owners`, SSO-authorised for each if enforced.
+
+on:
+  schedule:
+    # Every 15 min, 06:00–16:00 UTC, Mon–Fri (~08–18 CEST / ~07–17 CET).
+    # GitHub cron is UTC and has no DST.
+    - cron: "*/15 6-16 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      full_backfill:
+        description: "Ignore the time window; sweep ALL open matching issues"
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-coordination-boards
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for boards.yml)
+        uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Compute time window
+        id: window
+        run: |
+          if [ "${{ inputs.full_backfill }}" = "true" ]; then
+            echo "since=" >> "$GITHUB_OUTPUT"
+            echo "Mode: FULL BACKFILL (no --updated filter)"
+          else
+            # 25-min lookback vs 15-min cadence = overlap so nothing slips between runs.
+            since=$(date -u -d '25 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+            echo "since=$since" >> "$GITHUB_OUTPUT"
+            echo "Mode: incremental, --updated >=$since"
+          fi
+
+      - name: Sync boards
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
+          SINCE: ${{ steps.window.outputs.since }}
+        run: |
+          set -euo pipefail
+
+          board_count=$(yq '.boards | length' .github/boards.yml)
+          echo "Manifest has $board_count board(s)."
+
+          for b in $(seq 0 $((board_count - 1))); do
+            name=$(yq -r ".boards[$b].name"    .github/boards.yml)
+            project=$(yq -r ".boards[$b].project" .github/boards.yml)
+            owner=$(yq -r ".boards[$b].owner"   .github/boards.yml)
+
+            echo "::group::Board: $name (project $project, owned by $owner)"
+
+            # Build repeated --owner args (OR'd by gh).
+            owner_args=()
+            while IFS= read -r o; do
+              [ -n "$o" ] && owner_args+=(--owner "$o")
+            done < <(yq -r ".boards[$b].owners[]" .github/boards.yml)
+
+            # --updated filter (incremental only). gh uses range syntax >=DATE.
+            updated_args=()
+            [ -n "$SINCE" ] && updated_args+=(--updated ">=$SINCE")
+
+            # One search PER label; union URLs in an associative array (dedupe).
+            declare -A seen=()
+            label_count=$(yq ".boards[$b].labels | length" .github/boards.yml)
+
+            for l in $(seq 0 $((label_count - 1))); do
+              label=$(yq -r ".boards[$b].labels[$l]" .github/boards.yml)
+              echo "  Searching label: $label"
+
+              # Note: label passed via --label flag as a discrete arg — no
+              # search-string quoting; emoji/space match byte-for-byte.
+              while IFS= read -r url; do
+                [ -n "$url" ] && seen["$url"]=1
+              done < <(
+                gh search issues \
+                  "${owner_args[@]}" \
+                  --label "$label" \
+                  --state open \
+                  "${updated_args[@]}" \
+                  --limit 1000 \
+                  --json url --jq '.[].url'
+              )
+            done
+
+            echo "  Unique matching issues this run: ${#seen[@]}"
+
+            added=0
+            for url in "${!seen[@]}"; do
+              if gh project item-add "$project" --owner "$owner" --url "$url" >/dev/null 2>&1; then
+                added=$((added + 1))
+              else
+                echo "  ! could not add $url (already present, or permission issue)"
+              fi
+            done
+            echo "  item-add succeeded for $added issue(s)."
+
+            unset seen
+            echo "::endgroup::"
+          done
+
+          echo "All boards processed."

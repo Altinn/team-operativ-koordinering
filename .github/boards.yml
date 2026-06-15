@@ -1,0 +1,64 @@
+# Coordination board manifest
+# -----------------------------
+# One entry per project board. The sync workflow reads this file and, for each
+# board, finds issues matching ANY of the labels across ALL listed owners, then
+# adds them to the board's Projects v2 project.
+#
+# Adding a board = add an entry here. No workflow changes needed.
+#
+# Fields:
+#   name      Human-readable label (shown in workflow logs only).
+#   project   The Projects v2 number (from the project URL: /projects/<N>).
+#   owner     The org that OWNS the project board — where items are added.
+#   owners    List of orgs/users to SEARCH for issues. Repeated --owner in gh
+#             OR's these together, so an issue in any listed org can match.
+#   labels    List of label names. The workflow runs one search PER label and
+#             unions the results, so these are OR'd ("has any of these labels").
+#             IMPORTANT: gh ANDs repeated --label, so OR must be done by the
+#             workflow looping — never collapse these into one search.
+#             Label names may contain spaces/emoji; they're passed to gh via
+#             the --label FLAG as discrete arguments, so no search-string
+#             quoting is needed and emoji match byte-for-byte reliably.
+#
+# Why lists of flags, not a raw search string:
+#   `gh search issues` mis-parses `org:`/`label:` qualifiers embedded in a
+#   positional query string. The CLI wants qualifier FLAGS (--owner, --label).
+#   This manifest is built around that, which also sidesteps emoji quoting.
+
+boards:
+  - name: UU (accessibility)
+    project: 193
+    owner: Altinn
+    owners:
+      - Altinn
+      - digdir
+    labels:
+      - wcag                 # Altinn — ~61 open
+      - area/accessibility   # Altinn — ~162 open
+      - "♿️ accessibility"    # Digdir/designsystemet — ~118 open (emoji + U+FE0F)
+
+  # --- Future boards: copy the block above, fill in verified values ---------
+  # Verify each board's real label names first, e.g.:
+  #   gh label list --repo Altinn/<repo> | grep -i <topic>
+  #   gh label list --repo digdir/<repo> | grep -i <topic>
+  #
+  # - name: Test development
+  #   project: 000
+  #   owner: Altinn
+  #   owners: [Altinn, digdir]
+  #   labels:
+  #     - <verified-test-label>
+  #
+  # - name: Content design
+  #   project: 000
+  #   owner: Altinn
+  #   owners: [Altinn, digdir]
+  #   labels:
+  #     - <verified-content-label>
+  #
+  # - name: TOK overview
+  #   project: 000
+  #   owner: Altinn
+  #   owners: [Altinn, digdir]
+  #   labels:
+  #     - <verified-tok-label>
