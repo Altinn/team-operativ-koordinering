@@ -46,30 +46,45 @@ jobs:
   activate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with: { python-version: "3.12" }
 
       - run: pip install pyyaml
 
-      # Resolve inputs from whichever trigger fired
+      # Resolve inputs from whichever trigger fired.
+      # SECURITY: untrusted inputs / client_payload are passed via `env:` and
+      # read as shell variables — never interpolated with ${{ }} into the script
+      # body (which would allow command injection). Newlines are stripped before
+      # values reach $GITHUB_ENV so they cannot inject extra variables.
       - name: Resolve inputs
-        id: in
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          DI_LEVEL: ${{ inputs.level }}
+          DI_PLAN: ${{ inputs.plan }}
+          DI_CATEGORY: ${{ inputs.category }}
+          DI_AFFECTED: ${{ inputs.affected }}
+          CP_LEVEL: ${{ github.event.client_payload.level }}
+          CP_PLAN: ${{ github.event.client_payload.plan }}
+          CP_CATEGORY: ${{ github.event.client_payload.category }}
+          CP_AFFECTED: ${{ github.event.client_payload.affected }}
+          CP_SOURCE: ${{ github.event.client_payload.source }}
         run: |
-          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            echo "level=${{ github.event.client_payload.level }}"       >> "$GITHUB_OUTPUT"
-            echo "plan=${{ github.event.client_payload.plan }}"         >> "$GITHUB_OUTPUT"
-            echo "category=${{ github.event.client_payload.category }}" >> "$GITHUB_OUTPUT"
-            echo "affected=${{ github.event.client_payload.affected }}" >> "$GITHUB_OUTPUT"
-            echo "by=event:${{ github.event.client_payload.source }}"   >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            LEVEL="$CP_LEVEL"; PLAN="$CP_PLAN"; CATEGORY="$CP_CATEGORY"; AFFECTED="$CP_AFFECTED"; BY="event:$CP_SOURCE"
           else
-            echo "level=${{ inputs.level }}"       >> "$GITHUB_OUTPUT"
-            echo "plan=${{ inputs.plan }}"         >> "$GITHUB_OUTPUT"
-            echo "category=${{ inputs.category }}" >> "$GITHUB_OUTPUT"
-            echo "affected=${{ inputs.affected }}" >> "$GITHUB_OUTPUT"
-            echo "by=@${{ github.actor }}"         >> "$GITHUB_OUTPUT"
+            LEVEL="$DI_LEVEL"; PLAN="$DI_PLAN"; CATEGORY="$DI_CATEGORY"; AFFECTED="$DI_AFFECTED"; BY="@$ACTOR"
           fi
+          strip() { printf '%s' "$1" | tr -d '\r\n'; }
+          {
+            printf 'IN_LEVEL=%s\n'    "$(strip "$LEVEL")"
+            printf 'IN_PLAN=%s\n'     "$(strip "$PLAN")"
+            printf 'IN_CATEGORY=%s\n' "$(strip "$CATEGORY")"
+            printf 'IN_AFFECTED=%s\n' "$(strip "$AFFECTED")"
+            printf 'IN_BY=%s\n'       "$(strip "$BY")"
+          } >> "$GITHUB_ENV"
 
       # Fail fast if the registry is internally inconsistent
       - name: Validate registry
@@ -77,21 +92,21 @@ jobs:
 
       - name: Render issue + Slack artifacts
         run: |
-          python scripts/activate.py "${{ steps.in.outputs.level }}" \
-            --plan "${{ steps.in.outputs.plan }}" \
-            --by "${{ steps.in.outputs.by }}" \
-            --category "${{ steps.in.outputs.category }}" \
-            --affected "${{ steps.in.outputs.affected }}"
+          python scripts/activate.py "$IN_LEVEL" \
+            --plan "$IN_PLAN" \
+            --by "$IN_BY" \
+            --category "$IN_CATEGORY" \
+            --affected "$IN_AFFECTED"
 
       - name: Create incident issue
         id: issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const fs = require('fs');
             const body = fs.readFileSync('build/issue_body.md', 'utf8');
-            const level = '${{ steps.in.outputs.level }}';
-            const plan  = '${{ steps.in.outputs.plan }}';
+            const level = process.env.IN_LEVEL;
+            const plan  = process.env.IN_PLAN;
             const stamp = new Date().toISOString().slice(0,16).replace('T',' ');
             const issue = await github.rest.issues.create({
               owner: context.repo.owner,
@@ -109,10 +124,10 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_INCIDENT_CHANNEL: ${{ secrets.SLACK_INCIDENT_CHANNEL }}
         run: |
-          python scripts/activate.py "${{ steps.in.outputs.level }}" \
-            --plan "${{ steps.in.outputs.plan }}" \
-            --by "${{ steps.in.outputs.by }}" \
-            --category "${{ steps.in.outputs.category }}" \
-            --affected "${{ steps.in.outputs.affected }}" \
+          python scripts/activate.py "$IN_LEVEL" \
+            --plan "$IN_PLAN" \
+            --by "$IN_BY" \
+            --category "$IN_CATEGORY" \
+            --affected "$IN_AFFECTED" \
             --issue-url "${{ steps.issue.outputs.url }}"
           python scripts/notify_slack.py build/slack.json
