@@ -13,6 +13,7 @@ Usage:
 """
 from __future__ import annotations
 import sys
+import json
 import pathlib
 import yaml
 
@@ -55,8 +56,46 @@ def expand_targets(targets: list[str]) -> list[str]:
     return flat
 
 
+def _step_vocab() -> tuple[set, set, set]:
+    """Controlled vocabularies live in schema/step.schema.json (single source of
+    truth). Read them here so the data and the validator can never disagree."""
+    schema = json.loads((ROOT / "schema" / "step.schema.json").read_text())
+    d = schema["$defs"]
+    return (set(d["gate"]["enum"]), set(d["risk"]["enum"]), set(d["automation"]["enum"]))
+
+
+def validate_steps(errors: list[str]) -> None:
+    """Each wizard step uses allowed gate/risk/automation values and obeys the
+    governance rules: high-risk may never be 'auto'; a decision-gated step must
+    be 'narrate' (the call is the human's, the machine only narrates + records)."""
+    gates, risks, autos = _step_vocab()
+    for plan_dir in sorted((ROOT / "plans").iterdir()):
+        steps_dir = plan_dir / "steps"
+        if not steps_dir.is_dir():
+            continue
+        for sf in sorted(steps_dir.glob("*.yaml")):
+            pb = yaml.safe_load(sf.read_text()) or {}
+            rel = f"{plan_dir.name}/steps/{sf.name}"
+            for s in pb.get("steps", []):
+                sid = s.get("id", "?")
+                for field, vocab in (("gate", gates), ("risk", risks), ("automation", autos)):
+                    val = s.get(field)
+                    if val is None:
+                        errors.append(f"step '{rel}:{sid}' missing '{field}'")
+                    elif val not in vocab:
+                        errors.append(f"step '{rel}:{sid}' {field}='{val}' not in {sorted(vocab)}")
+                if s.get("risk") == "high" and s.get("automation") == "auto":
+                    errors.append(f"step '{rel}:{sid}' is high-risk and cannot be automation='auto'")
+                if s.get("gate") == "decision" and s.get("automation") not in (None, "narrate"):
+                    errors.append(f"step '{rel}:{sid}' is decision-gated and must be automation='narrate'")
+                owner = s.get("owner_role")
+                if owner and owner not in ROLES["roles"]:
+                    errors.append(f"step '{rel}:{sid}' owner_role -> unknown role '{owner}'")
+
+
 def validate() -> int:
-    """Referential integrity: every holder/deputy exists; every group member is a role."""
+    """Referential integrity: every holder/deputy exists; every group member is a
+    role; every wizard step is well-formed and obeys the governance rules."""
     errors = []
     for rid, role in ROLES["roles"].items():
         for slot in ("holder", "deputy"):
@@ -72,6 +111,7 @@ def validate() -> int:
     for pid, p in PEOPLE.items():
         if p.get("slack", "").startswith("U_REPLACE"):
             errors.append(f"person '{pid}' has placeholder Slack ID (warn)")
+    validate_steps(errors)
     fatal = [e for e in errors if "(warn)" not in e]
     for e in errors:
         print(("FATAL " if "(warn)" not in e else "warn  ") + e, file=sys.stderr)
@@ -82,9 +122,15 @@ def _load_plan(plan_id: str = "bod-altinn3") -> dict:
     return yaml.safe_load((ROOT / "plans" / plan_id / "plan.yaml").read_text())
 
 
-def notify_list(level: str, plan_id: str = "bod-altinn3") -> list[dict]:
+def notify_list(level: str, plan_id: str = "bod-altinn3",
+                category: str | None = None) -> list[dict]:
+    """Roles paged at a tier. A category (e.g. 'sikkerhet') folds in its
+    `notify_always` roles, so a *yellow* security incident still pages security."""
     plan = _load_plan(plan_id)
-    targets = plan["escalation"][level].get("notifies", [])
+    targets = list(plan["escalation"][level].get("notifies", []))
+    if category:
+        cat = plan.get("incident_categories", {}).get(category, {})
+        targets += cat.get("notify_always", [])
     return [resolve_role(r) for r in expand_targets(targets)]
 
 
@@ -93,10 +139,10 @@ if __name__ == "__main__":
     if cmd == "validate":
         sys.exit(validate())
     elif cmd == "whois":
-        import json
         print(json.dumps(resolve_role(sys.argv[2]), indent=2, ensure_ascii=False))
     elif cmd == "notify-list":
-        for p in notify_list(sys.argv[2]):
+        category = sys.argv[3] if len(sys.argv) > 3 else None
+        for p in notify_list(sys.argv[2], category=category):
             d = p["deputy"]["name"] if p["deputy"] else "—"
             print(f"{p['label']:40} {p['holder']['name']:24} (dep: {d})")
     else:

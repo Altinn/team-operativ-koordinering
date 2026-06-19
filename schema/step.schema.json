@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://digdir/beredskap-ops/schema/step.schema.json",
+  "title": "Veiviser-steg",
+  "description": "Ett steg i en playbook (plans/*/steps/*.yaml). Kontrollerte verdilister (enums) bor her og er ENESTE kilde — validatoren leser dem herfra.",
+  "$defs": {
+    "gate": {
+      "description": "Hvordan steget går videre. info=auto-hak ved aktivering; ack=ansvarlig bekrefter; action=utfør så hak av; decision=navngitt menneske registrerer ja/nei + begrunnelse, går ALDRI videre automatisk.",
+      "enum": ["info", "ack", "action", "decision"]
+    },
+    "risk": {
+      "description": "Konsekvens hvis steget gjøres feil/automatisk. Styrer hvor langt opp automatiseringsstigen steget får gå.",
+      "enum": ["low", "medium", "high"]
+    },
+    "automation": {
+      "description": "Hvor langt opp stigen dette steget kjører. narrate=fortell hvordan; assist=gi knapp/utkast/AI-chat; suggest=foreslå, menneske bekrefter; veto=maskin gjør, menneske kan stoppe; auto=maskin gjør selv.",
+      "enum": ["narrate", "assist", "suggest", "veto", "auto"]
+    }
+  },
+  "type": "object",
+  "required": ["id", "gate", "risk", "automation", "owner_role", "text"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "gate": { "$ref": "#/$defs/gate" },
+    "risk": { "$ref": "#/$defs/risk" },
+    "automation": { "$ref": "#/$defs/automation" },
+    "owner_role": { "type": "string", "description": "Rolle-ID fra roles/registry.yaml — aldri en person." },
+    "text": { "type": "string" },
+    "when": { "type": "string", "description": "Vilkår for at steget er relevant, f.eks. \"category == 'sikkerhet'\"." },
+    "blocks_on": { "type": "array", "items": { "type": "string" } },
+    "records": { "type": "array", "items": { "type": "string" } }
+  },
+  "allOf": [
+    {
+      "$comment": "Styringsregel: høyrisiko-steg kan aldri kjøres helt automatisk.",
+      "if": { "properties": { "risk": { "const": "high" } } },
+      "then": { "properties": { "automation": { "enum": ["narrate", "assist", "suggest", "veto"] } } }
+    },
+    {
+      "$comment": "Styringsregel: et beslutningssteg er menneskets — maskinen kan bare fortelle og registrere.",
+      "if": { "properties": { "gate": { "const": "decision" } } },
+      "then": { "properties": { "automation": { "const": "narrate" } } }
+    }
+  ]
+}

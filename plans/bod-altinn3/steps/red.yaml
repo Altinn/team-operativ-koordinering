@@ -5,14 +5,16 @@
 # line in the mirrored Slack thread. Owners are role IDs, resolved to names at
 # activation time. Steps are ordered; `gate` controls progression.
 #
-# gate values:
-#   ack       — owner must acknowledge (tick box / Slack reaction)
-#   decision  — a named human must record an explicit yes/no + rationale.
-#               NEVER auto-advanced. This is where human-in-the-loop lives.
-#   action    — do the thing, then tick
-#   info      — informational, auto-ticks on activation (no human needed)
+# Every step is validated against schema/step.schema.json. Allowed values:
+#   gate:       info | ack | action | decision
+#   risk:       low | medium | high            (consequence if done wrong/auto)
+#   automation: narrate | assist | suggest | veto | auto   (the ladder)
 #
-# `blocks_on` lets a step wait for an earlier step id.
+# Governance rules enforced in CI:
+#   - a high-risk step can NEVER be automation: auto
+#   - a decision-gated step MUST be automation: narrate (human's call, logged)
+#
+# `blocks_on` lets a step wait for an earlier step id. `when` gates relevance.
 # =============================================================================
 
 playbook: red
@@ -21,6 +23,8 @@ title: "Rød — A-hendelse aktivering"
 steps:
   - id: confirm_activation
     gate: decision
+    risk: high
+    automation: narrate
     owner_role: avdelingsdirektor
     text: >
       Bekreft aktivering av RØD. Registrer kategori (drift/sikkerhet) og
@@ -30,18 +34,24 @@ steps:
 
   - id: page_core_roles
     gate: info
+    risk: low
+    automation: auto
     owner_role: incident_manager
     text: "Nøkkelroller varslet automatisk (DM + telefon-fallback). Se varslingslogg i tråden."
     blocks_on: [confirm_activation]
 
   - id: assign_incident_manager
     gate: ack
+    risk: medium
+    automation: assist
     owner_role: incident_manager
     text: "Incident Manager bekrefter og overtar koordinering. Stedfortreder ved fravær."
     blocks_on: [confirm_activation]
 
   - id: etabler_kriseledelse
     gate: decision
+    risk: high
+    automation: narrate
     owner_role: beredskapsleder
     text: >
       Beslutt om Digdir kriseledelse skal etableres etter beredskapsplanverket
@@ -51,6 +61,8 @@ steps:
 
   - id: security_assessment
     gate: decision
+    risk: high
+    automation: narrate
     owner_role: sikkerhetsansvarlig
     text: >
       KUN ved sikkerhetshendelse: vurder bevissikring, informasjonshåndtering,
@@ -61,12 +73,16 @@ steps:
 
   - id: start_rto_clocks
     gate: info
+    risk: low
+    automation: auto
     owner_role: incident_manager
     text: "RTO/RPO-klokker startet for berørte funksjoner (se plan.yaml). Vises i tråden."
     blocks_on: [confirm_activation]
 
   - id: stabilisering
     gate: action
+    risk: high
+    automation: assist
     owner_role: incident_manager
     text: >
       Følg DevOps-/hendelsesrutine: isoler feil, rull tilbake til siste stabile
@@ -75,12 +91,16 @@ steps:
 
   - id: notify_tjenesteeiere
     gate: action
+    risk: medium
+    automation: assist
     owner_role: incident_manager
     text: "Publiser status til tjenesteeiere via Statuspage / Brukerstøtteforum."
     blocks_on: [confirm_activation]
 
   - id: external_comms_gate
     gate: decision
+    risk: high
+    automation: narrate
     owner_role: avdelingsdirektor
     text: >
       Avklar eksternt budskap. KUN avdelingsdirektør/Digdir kommunikasjon
@@ -89,18 +109,24 @@ steps:
 
   - id: verify_recovery
     gate: action
+    risk: medium
+    automation: assist
     owner_role: incident_manager
     text: "Bekreft at berørte komponenter er gjenopprettet og overvåkes uten avvik."
     blocks_on: [stabilisering]
 
   - id: verify_data_integrity
     gate: action
+    risk: high
+    automation: assist
     owner_role: incident_manager
     text: "Bekreft dataintegritet (avstemming mot siste sikre versjon, jf. RPO)."
     blocks_on: [verify_recovery]
 
   - id: normalisering
     gate: decision
+    risk: high
+    automation: narrate
     owner_role: beredskapsleder
     text: >
       Beslutt tilbakeføring til normal drift. Forutsetning: tjeneste stabil og
@@ -110,6 +136,8 @@ steps:
 
   - id: close_and_log
     gate: action
+    risk: low
+    automation: assist
     owner_role: incident_manager
     text: >
       Avslutt formelt: oppdater hendelseslogg, planlegg evaluering (kap. 8),

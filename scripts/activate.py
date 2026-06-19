@@ -24,7 +24,12 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
-from resolve import resolve_role, notify_list, _load_plan, expand_targets  # noqa: E402
+from resolve import resolve_role, notify_list, _load_plan, expand_targets, PEOPLE  # noqa: E402
+
+
+def _slack_id(person_id: str) -> str:
+    sid = PEOPLE[person_id].get("slack", "")
+    return "" if sid.startswith("U_REPLACE") else sid
 
 
 def load_playbook(plan_id: str, level: str) -> dict:
@@ -73,9 +78,10 @@ def render_issue_body(plan_id: str, level: str, ctx: dict) -> str:
         owner = resolve_role(s["owner_role"])
         badge = {"decision": "🟥 BESLUTNING", "action": "🔧 handling",
                  "ack": "👍 bekreft", "info": "ℹ️ info"}.get(s["gate"], s["gate"])
+        autn = f" · {s['automation']}" if s.get("automation") else ""
         when = f" _(kun hvis: {s['when']})_" if s.get("when") else ""
         dep = f" ⟂ etter `{', '.join(s['blocks_on'])}`" if s.get("blocks_on") else ""
-        lines.append(f"- [ ] **[{badge}]** ({owner['label']} → {owner['holder']['name']}) "
+        lines.append(f"- [ ] **[{badge}{autn}]** ({owner['label']} → {owner['holder']['name']}) "
                      f"{s['text'].strip()}{when}{dep}")
     lines.append("")
 
@@ -96,10 +102,11 @@ def render_issue_body(plan_id: str, level: str, ctx: dict) -> str:
 def render_slack_blocks(plan_id: str, level: str, ctx: dict, issue_url: str = "") -> dict:
     plan = _load_plan(plan_id)
     esc = plan["escalation"][level]
-    targets = notify_list(level, plan_id)
+    targets = notify_list(level, plan_id, category=ctx.get("category") or None)
     mentions = " ".join(
-        f"<@{resolve_role.__globals__['PEOPLE'][t['holder']['id']].get('slack','')}>"
+        f"<@{_slack_id(t['holder']['id'])}>"
         for t in targets
+        if _slack_id(t["holder"]["id"])
     )
     header = f"{esc['label']} aktivert — {plan['meta']['title']}"
     body = (f"*Aktivert:* {ctx['activated_at']}  |  *av:* {ctx.get('activated_by','—')}\n"
@@ -113,7 +120,7 @@ def render_slack_blocks(plan_id: str, level: str, ctx: dict, issue_url: str = ""
             ]
         },
         "direct_pages": [
-            {"slack_id": resolve_role.__globals__["PEOPLE"][t["holder"]["id"]].get("slack", ""),
+            {"slack_id": _slack_id(t["holder"]["id"]),
              "name": t["holder"]["name"],
              "phone": t["holder"].get("phone", ""),
              "text": f"{esc['label']} aktivert. Du er varslet som {t['label']}. Se {issue_url}"}

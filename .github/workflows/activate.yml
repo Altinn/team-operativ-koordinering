@@ -107,7 +107,7 @@ jobs:
       - name: Post to Slack
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_CHANNEL: ${{ secrets.SLACK_INCIDENT_CHANNEL }}
+          SLACK_INCIDENT_CHANNEL: ${{ secrets.SLACK_INCIDENT_CHANNEL }}
         run: |
           python scripts/activate.py "${{ steps.in.outputs.level }}" \
             --plan "${{ steps.in.outputs.plan }}" \
