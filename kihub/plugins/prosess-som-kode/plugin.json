@@ -1,0 +1,16 @@
+{
+  "name": "prosess-som-kode",
+  "version": "0.1.0",
+  "description": "Startpakke for prosess som kjørbar kode: verktøyene rundt et ops-repo (ikke selve dataene). Veileder trygge endringer, holder genererte dokumenter i synk, håndhever styringsreglene, og assisterer under en aktiv hendelse. Beredskap er første instans; mønsteret er generelt.",
+  "author": "DigDir BOD",
+  "components": {
+    "instructions": ["../../instructions/beredskap-ops.instructions.md"],
+    "skills": ["../../skills/endre-rolle"],
+    "agents": ["../../agents/veiviser-assistent.agent.md"],
+    "hooks": [
+      "../../hooks/regenerer-roster/hooks.json",
+      "../../hooks/valider-beredskap/hooks.json"
+    ]
+  },
+  "notes": "Distribusjonssvaret på «50 snøfnugg»: ett delt mønster, mange prosesser. Andre team installerer denne for å ta i bruk samme arbeidsmåte uten å bygge sin egen variant."
+}

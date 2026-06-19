@@ -24,6 +24,8 @@ jobs:
       - run: pip install pyyaml
       - name: Referential integrity (roles -> people, groups -> roles)
         run: python scripts/resolve.py validate
+      - name: Generated roster is in sync with source
+        run: python scripts/generate_roster.py --check
       - name: Render every playbook (catches broken role refs in steps)
         run: |
           for lvl in yellow red; do

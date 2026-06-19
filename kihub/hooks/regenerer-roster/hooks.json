@@ -1,0 +1,16 @@
+{
+  "description": "Regenererer people/ROSTER.generated.md når roller/personer endres, så den genererte oversikten aldri går ut av synk med kilden.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/kihub/hooks/regenerer-roster/regenerate_roster_hook.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

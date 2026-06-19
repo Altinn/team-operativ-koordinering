@@ -1,0 +1,16 @@
+{
+  "description": "Kjører scripts/resolve.py validate etter endringer i roller/personer/planer/steg, og blokkerer med feilmelding hvis registeret blir inkonsistent eller et steg bryter styringsreglene.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/kihub/hooks/valider-beredskap/validate_hook.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
