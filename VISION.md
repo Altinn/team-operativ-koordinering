@@ -52,7 +52,7 @@ midlertidig krykke.
 
 Det er en konkret, avgrenset plan vi uansett må ha, der grensen mellom maskin og
 menneske er knivskarp – perfekt som første bevis. Det samme mønsteret gjenbrukes
-på onboarding, tilgangsstyring, TOK og beslutningslogg. Rolleregisteret er delt
+på onboarding, tilgangsstyring og andre rutiner. Rolleregisteret er delt
 infrastruktur på tvers av alle.
 
 ## Hva det krever

@@ -29,10 +29,6 @@ Word-dokumentet blander sammen to ting som bør holdes adskilt:
 - **Plan som kjøretid** – hvem som varsles, hvilke veiviser-steg som utløses,
   hva som logges. Dette er en GitHub Action pluss Slack.
 
-Skillet er det som gjør Git som kilde mulig. Det er den samme
-*publiser–oppdag–innkall*-logikken som i koordineringsvenue-arbeidet, men under
-operasjonell last.
-
 ## 3. Nøkkelbeslutning: rolleindireksjon
 
 Dette er den viktigste enkeltbeslutningen. Planen navngir **aldri** en person –
@@ -43,7 +39,7 @@ roles/registry.yaml    rolle  -> innehaver + stedfortreder   (endres når folk b
 people/directory.yaml  person -> navn/e-post/telefon/slack   (kontaktoppslag)
 ```
 
-N�r noen slutter: endre **én linje** i `registry.yaml`. Alle planer som peker på
+N�r noen slutter: endre **én linje** i `registry.yaml`. Alle planer som peker på
 rollen, blir umiddelbart riktige. PR-en er revisjonssporet. CI hindrer at en
 plan kan peke på en person som ikke finnes.
 
@@ -52,9 +48,7 @@ hvem som har myndighet. Kontaktdetaljer endres ofte og har lavere risiko. Ulik
 endringstakt gir ulike filer.
 
 > **Gjenbruk:** dette rolleregisteret er ikke beredskapsspesifikt. Det løser
-> «hvem eier dette»-problemet for TOK, Design@Digdir og eierfeltene i
-> beslutningsloggen også. Bygg det først, som delt infrastruktur. Avstem ID-ene
-> mot det som måtte finnes i CORTEX/LeadershipOps før de fester seg.
+> «hvem eier dette»-problemet.
 
 ## 4. Arkitektur
 
@@ -111,9 +105,9 @@ bokføring er maskinens jobb; det å erklære rødt og å normalisere er mennesk
 - **Knapp:** `workflow_dispatch` med nedtrekksmeny (`level`, `plan`, `category`,
   `affected`). Ett klikk fra Actions-fanen, eller via en tynn proxy for en
   Slack slash-kommando som kaller GitHub-API-et.
-- **Hendelse:** `repository_dispatch` – overvåking (Statuspage, Azure Monitor,
-  TOK-verktøy) sender en POST til dispatches-endepunktet og utløser aktivering
-  automatisk når en A-terskel passeres.
+- **Hendelse:** `repository_dispatch` – overvåking (Statuspage, Azure Monitor)
+  sender en POST til dispatches-endepunktet og utløser aktivering automatisk når
+  en A-terskel passeres.
 
 ## 7. Avgrensning: hva som *ikke* automatiseres
 
@@ -124,21 +118,7 @@ reserverer med rette disse for avdelingsdirektør og beredskapsleder. Mennesket
 beholder tilstandsovergangene; maskinen håndterer utsending og bokføring.
 Grensen er gjort eksplisitt slik at de som reviewer, kan stole på systemet.
 
-## 8. Kobling til eksisterende arbeid
-
-Dette er ikke et frittstående system – det er **case-typene Policy/Mandate og
-Information fra LeadershipOps-taksonomien, satt under operasjonell last**.
-Skjemaet for beslutningsloggen (Ask/Status/Recommendation → Progress →
-Dependencies → Changelog) lar seg nesten rett over på et hendelsesrecord.
-Rolleregisteret er delt infrastruktur på tvers av TOK, Design@Digdir og
-beslutningsloggen.
-
-> Tre ting bør avstemmes mot CORTEX før dette fester seg: (1) case-type-
-> taksonomien, (2) feltnavnene i beslutningslogg-skjemaet, og (3) eksisterende
-> person- og rolleidentifikatorer. Jeg hadde ikke filsystemtilgang til CORTEX
-> da dette ble skrevet.
-
-## 9. Sikkerhet og personvern
+## 8. Sikkerhet og personvern
 
 - `people/directory.yaml` er klassifisert `Internt` (telefonnumre er
   personopplysninger). Den skal ikke speiles til offentlige flater, logger eller
@@ -150,7 +130,7 @@ beslutningsloggen.
 - Telefoneskalering (SMS/tale) er bevisst *ikke* automatisert i v1 – varslene
   inneholder nummeret slik at et menneske kan ringe bevisst.
 
-## 10. Veikart
+## 9. Veikart
 
 | Fase | Innhold |
 |---|---|
@@ -159,9 +139,8 @@ beslutningsloggen.
 | v1.2 | Toveis synk: huk av i Slack → oppdater avkrysning i saken (Slack Events API og en liten webhook-mottaker). |
 | v2 | Proxy for slash-kommando; `repository_dispatch` fra Statuspage/Azure; CODEOWNERS. |
 | v2.1 | Autoevaluering: regn ut RTO/RPO-etterlevelse fra tidsstemplene i saken; generer rapport til kapittel 8. |
-| v3 | Generaliser rolleregisteret ut til TOK/Design@Digdir/beslutningsloggen. |
 
-## 11. Åpne spørsmål til review
+## 10. Åpne spørsmål til review
 
 1. Skal arkivet `incidents/*.md` genereres når saken lukkes, eller holder saken
    alene som logg? (v1 forutsetter at saken er loggen, og at arkiv-md-en er

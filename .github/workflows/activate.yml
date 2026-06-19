@@ -4,8 +4,8 @@
 # Two activation paths into one job:
 #   - workflow_dispatch    : the BUTTON (Actions tab dropdown, or Slack slash
 #                            command via a thin proxy that calls the GH API)
-#   - repository_dispatch  : EVENT-DRIVEN (Statuspage / Azure Monitor / TOK
-#                            tooling POSTs to the dispatches endpoint)
+#   - repository_dispatch  : EVENT-DRIVEN (Statuspage / Azure Monitor POSTs to
+#                            the dispatches endpoint)
 #
 # The job: validate -> render -> create incident Issue -> post Slack.
 # It performs NOTIFICATION + LOGGING only. It never declares or stands down a

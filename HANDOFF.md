@@ -46,17 +46,14 @@ sakens checkboxer. Vurder en `block_actions`-payload med Slack-knapper per steg
 framfor fritekst-reaksjoner. Dette er forskjellen på "fint scaffold" og "brukes
 faktisk under en hendelse".
 
-### 3. Gjenstående fra veikartet (se DESIGN.md §10)
+### 3. Gjenstående fra veikartet (se DESIGN.md §9)
 - [ ] v2: slash-kommando-proxy så vakthavende kan aktivere uten GitHub-tilgang.
 - [ ] v2: `repository_dispatch` fra Statuspage/Azure Monitor for auto-aktivering.
 - [ ] v2.1: autoevaluering – regn RTO/RPO-etterlevelse fra sakens tidsstempler.
-- [ ] v3: generaliser rolleregisteret ut til TOK/Design@Digdir/beslutningslogg.
 
-## Tre avstemminger før dette hardner (DESIGN.md §8, §11)
-1. Rolle-ID-ene og case-type/beslutningslogg-feltnavnene mot det som finnes i
-   CORTEX/LeadershipOps – ble skrevet uten filsystemtilgang til CORTEX.
-2. Bekreft at det ikke finnes et konkurrerende rolleregister i bruk allerede.
-3. Avklar de tre åpne spørsmålene i DESIGN.md §11.
+## To avstemminger før dette hardner (DESIGN.md §10)
+1. Bekreft at det ikke finnes et konkurrerende rolleregister i bruk allerede.
+2. Avklar de tre åpne spørsmålene i DESIGN.md §10.
 
 ## Vær varsom her
 Dette er beredskap. Hold automatikken til varsling, koordinering og logging.

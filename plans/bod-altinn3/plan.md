@@ -26,7 +26,7 @@ aktiveres. Hele arkitekturen er beskrevet i [`../../docs/DESIGN.md`](../../docs/
 | 🟡 Gul | B-hendelse: redusert eller ustabil tjeneste, eller bortfall med nødløsning | `incident_manager` | `steps/yellow.yaml` |
 | 🔴 Rød | A-hendelse: bortfall av kritisk tjeneste uten nødløsning, sikkerhetsbrudd, omdømme | `avdelingsdirektor` | `steps/red.yaml` |
 
-N�r rødt nivå aktiveres, utløses samtidig en *menneskelig* vurdering av om
+Når rødt nivå aktiveres, utløses samtidig en *menneskelig* vurdering av om
 Digdir kriseledelse skal etableres (jf. punkt 1.4 i originalplanen). Automatikken
 tar ikke denne beslutningen – den løfter spørsmålet fram som et beslutningssteg
 i veiviseren.
