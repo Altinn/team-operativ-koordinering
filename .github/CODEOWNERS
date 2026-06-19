@@ -1,0 +1,5 @@
+# Endringer i hvem-har-myndighet krever review fra rett personell.
+# Erstatt med faktiske GitHub-brukere/team.
+/roles/            @digdir/bod-beredskap
+/people/           @digdir/bod-beredskap
+/plans/            @digdir/bod-beredskap

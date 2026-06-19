@@ -1,0 +1,48 @@
+# =============================================================================
+# plans/bod-altinn3/steps/yellow.yaml
+# -----------------------------------------------------------------------------
+# B-hendelse: lighter coordination, no kriseledelse / external-comms gates by
+# default. Can be escalated to red.yaml mid-flight (the activator copies the
+# open issue forward and pages the red-tier roles).
+# =============================================================================
+
+playbook: yellow
+title: "Gul — B-hendelse aktivering"
+
+steps:
+  - id: confirm_activation
+    gate: decision
+    owner_role: incident_manager
+    text: "Bekreft GUL. Registrer kategori og berørt(e) funksjon(er)."
+    records: [category, affected_functions]
+
+  - id: page_coordination
+    gate: info
+    owner_role: incident_manager
+    text: "Seksjonssjef + beredskapsleder + berørte produkteiere varslet."
+    blocks_on: [confirm_activation]
+
+  - id: midlertidig_nodlosning
+    gate: action
+    owner_role: incident_manager
+    text: "Etabler/verifiser midlertidig nødløsning. Vurder degradert modus for ikke-kritiske komponenter."
+
+  - id: watch_escalation
+    gate: ack
+    owner_role: incident_manager
+    text: >
+      Overvåk for forhøyet risiko for A-hendelse. Ved terskel: eskalér til RØD
+      (aktiver red-playbook, varsle avdelingsdirektør).
+
+  - id: resolve_or_escalate
+    gate: decision
+    owner_role: incident_manager
+    text: "Beslutt: løst og normaliser, ELLER eskalér til RØD."
+    records: [decision, rationale]
+    blocks_on: [midlertidig_nodlosning]
+
+  - id: close_and_log
+    gate: action
+    owner_role: incident_manager
+    text: "Avslutt: oppdater hendelseslogg, evaluering ved behov (kap. 8)."
+    blocks_on: [resolve_or_escalate]

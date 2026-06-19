@@ -1,0 +1,60 @@
+# =============================================================================
+# people/directory.yaml
+# -----------------------------------------------------------------------------
+# Contact resolution only. Kept SEPARATE from roles/registry.yaml on purpose:
+#   - roles change rarely and are reviewed carefully (who has authority)
+#   - contact details change often and are lower-stakes edits
+#
+# `slack` is the Slack member ID (Uxxxxxxxx), NOT the @handle — IDs are stable
+# across display-name changes. Get it from a profile: ··· > Copy member ID.
+#
+# PRIVACY NOTE: phone numbers are personal data. This file is `Internt`-
+# classified. Do not mirror it into public surfaces, logs, or URL params.
+#
+# ALL VALUES BELOW ARE PLACEHOLDERS. Replace person IDs, names, emails, phones
+# and Slack IDs with real values before going live. Keep the person IDs in sync
+# with roles/registry.yaml (holder/deputy must match keys here).
+# =============================================================================
+
+people:
+  person.a:
+    name: "Person A"
+    email: person.a@example.no
+    phone: "+47 000 00 001"
+    slack: "U_REPLACE_ME"
+
+  person.b:
+    name: "Person B"
+    email: person.b@example.no
+    phone: "+47 000 00 002"
+    slack: "U_REPLACE_ME"
+
+  person.c:
+    name: "Person C"
+    email: person.c@example.no
+    phone: "+47 000 00 003"
+    slack: "U_REPLACE_ME"
+
+  person.d:
+    name: "Person D"
+    email: person.d@example.no
+    phone: "+47 000 00 004"
+    slack: "U_REPLACE_ME"
+
+  person.e:
+    name: "Person E"
+    email: person.e@example.no
+    phone: "+47 000 00 005"
+    slack: "U_REPLACE_ME"
+
+  person.f:
+    name: "Person F"
+    email: person.f@example.no
+    phone: "+47 000 00 006"
+    slack: "U_REPLACE_ME"
+
+  duty.desk:
+    name: "Duty Desk (placeholder)"
+    email: duty.desk@example.no
+    phone: "+47 000 00 007"
+    slack: "U_REPLACE_ME"  # or a channel handle for the duty desk

@@ -1,0 +1,143 @@
+# =============================================================================
+# plans/bod-altinn3/plan.yaml
+# -----------------------------------------------------------------------------
+# The machine-readable plan. Automation reads THIS. Humans read plan.md (the
+# prose, hjelpetekst, and rationale) next to it. Keep them in sync via review.
+#
+# No person is named anywhere in this file — only role IDs that resolve
+# through roles/registry.yaml -> people/directory.yaml.
+# =============================================================================
+
+meta:
+  id: bod-altinn3
+  title: "Kontinuitetsplan – BOD (Altinn 3)"
+  version: "0.1"
+  status: draft
+  owner_role: seksjonssjef_styring_stotte
+  approved_by_role: avdelingsdirektor
+  classification: internal
+  next_review: "2026-07-01"
+  iso_reference: "ISO 22301"
+
+# ---------------------------------------------------------------------------
+# Escalation tiers. `activated_by` lists the roles AUTHORISED to declare the
+# level — the automation enforces this, it does not decide. `notifies` is the
+# fan-out target list (roles or groups from registry.yaml).
+# ---------------------------------------------------------------------------
+escalation:
+  green:
+    label: "Grønn — normal drift"
+    criteria: "Ingen aktive A-/B-hendelser. C-hendelser i ordinær servicedesk-/DevOps-prosess."
+    activated_by: []
+    notifies: []
+  yellow:
+    label: "Gul — B-hendelse"
+    criteria: >
+      Redusert eller ustabil tjeneste i én eller flere Altinn 3-komponenter,
+      eller bortfall av kritisk innsatsfaktor med midlertidig nødløsning.
+      Forhøyet risiko for A-hendelse.
+    activated_by: [incident_manager]
+    notifies: [seksjonssjef_styring_stotte, beredskapsleder, produkteiere]
+    playbook: steps/yellow.yaml
+  red:
+    label: "Rød — A-hendelse"
+    criteria: >
+      Bortfall av kritisk tjeneste uten nødløsning, eller hendelse med
+      vesentlig konsekvens for tjenesteeiere/sluttbrukere. Sikkerhetsbrudd
+      eller omdømme-/mediepåvirkning.
+    activated_by: [avdelingsdirektor]
+    notifies: [kriseledelse, sikkerhetsansvarlig, produkteiere]
+    playbook: steps/red.yaml
+    # Declaring rød also triggers a HUMAN decision on whether to stand up
+    # Digdir kriseledelse per beredskapsplanverket. Automation does NOT decide.
+    requires_human_decision: ["etabler_kriseledelse"]
+
+# ---------------------------------------------------------------------------
+# Hendelseskategori (independent axis from severity). Drives whether the
+# security-incident path and 72h Datatilsynet assessment are surfaced.
+# ---------------------------------------------------------------------------
+incident_categories:
+  drift:
+    label: "Driftshendelse"
+    security_path: false
+  sikkerhet:
+    label: "Sikkerhetshendelse"
+    security_path: true
+    notify_always: [sikkerhetsansvarlig]
+    personal_data_breach_clock_hours: 72  # Datatilsynet assessment
+
+# ---------------------------------------------------------------------------
+# BIA: critical functions. RTO/RPO are machine-readable so the activator can
+# start countdown clocks from the activation timestamp.
+# ---------------------------------------------------------------------------
+functions:
+  - id: plattform
+    label: "Plattform"
+    priority: critical
+    rto_hours: 0.15
+    rpo: zero
+    owner_role: incident_manager
+    consequence: "Altinn fungerer ikke."
+  - id: autorisasjon
+    label: "Autorisasjon"
+    priority: critical
+    rto_hours: 0.5
+    rpo: zero
+    owner_role: incident_manager
+    spof: true   # smal kompetanse i autorisasjonsteamet (R1)
+    consequence: "Tjenesteeiere/sluttbrukere får ikke tilgang; stopper all autorisert bruk."
+  - id: dialogporten
+    label: "Dialogporten"
+    priority: critical
+    rto_hours: 4
+    rpo_minutes: 15
+    depends_on: [autorisasjon]
+    consequence: "Brukere mister samlet oversikt og dialog; meldingsutveksling/innsyn rammes."
+  - id: melding_formidling
+    label: "Melding og Formidling"
+    priority: critical
+    rto_hours: 4
+    rpo_minutes: 15
+    depends_on: [autorisasjon]
+    consequence: "Stans i utsending/mottak av meldinger og skjema."
+  - id: arbeidsflate_studio
+    label: "Arbeidsflate og Altinn Studio"
+    priority: high
+    rto_hours: 8
+    rpo_hours: 1
+    consequence: "Sluttbrukere når ikke tjenester; tjenesteeiere kan ikke utvikle/endre."
+  - id: varsling_servicedesk
+    label: "Varsling, Servicedesk og hendelseshåndtering"
+    priority: high
+    rto_hours: 8
+    rpo_hours: 1
+    consequence: "Brukere får ikke varsler; brukerstøtte og hendelseshåndtering svekkes."
+
+# ---------------------------------------------------------------------------
+# Dependencies / single points of failure (kap. 5). Surfaced in the wizard so
+# responders see known SPOFs up front.
+# ---------------------------------------------------------------------------
+dependencies:
+  - function: autorisasjon
+    depends_on: "Core-/plattformtjenester, identitets-/innloggingsløsning, autorisasjonsteam"
+    spof: true
+    mitigation: "Kompetanseoverføring til linjen, dokumentasjon, dublering av nøkkelkompetanse"
+  - function: arbeidsflate_studio
+    depends_on: "Plattformdrift, frontend (Studio v4), DevOps-kapasitet"
+    spof: partial
+    mitigation: "Versjonskontroll, rollback, kapasitetsplan DevOps"
+  - function: varsling_servicedesk
+    depends_on: "Bemanning og vakt, DevOps-modell, overvåkingsverktøy"
+    spof: true   # nøkkelpersonell ved konsulentavgang 30.06
+    mitigation: "Stedfortrederordning, insourcing, T3 ressurs- og kontinuitetsplan"
+
+# ---------------------------------------------------------------------------
+# Communication matrix (kap. 6). Who speaks outward is constrained.
+# ---------------------------------------------------------------------------
+communication:
+  external_spokesperson_role: avdelingsdirektor  # eneste som uttaler seg utad
+  channels:
+    ansatte: { medium: "Teams / intern kanal", owner_role: seksjonssjef_styring_stotte }
+    ledelse: { medium: "Direkte / Teams", owner_role: beredskapsleder }
+    tjenesteeiere: { medium: "Statuspage / Brukerstøtteforum", owner_role: incident_manager }
+    media: { medium: "Digdir kommunikasjonsenhet", owner_role: kommunikasjon }

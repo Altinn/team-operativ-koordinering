@@ -1,0 +1,44 @@
+# =============================================================================
+# .github/workflows/validate.yml
+# -----------------------------------------------------------------------------
+# Runs on every PR touching roles/people/plans. This is what makes the
+# role-indirection safe: you cannot merge a change that leaves a plan pointing
+# at a non-existent person, an unknown role, or a broken playbook reference.
+# The PR review + this gate together are the audit trail for "who holds what".
+# =============================================================================
+name: Valider beredskap-data
+
+on:
+  pull_request:
+    paths: ["roles/**", "people/**", "plans/**", "scripts/**"]
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pyyaml
+      - name: Referential integrity (roles -> people, groups -> roles)
+        run: python scripts/resolve.py validate
+      - name: Render every playbook (catches broken role refs in steps)
+        run: |
+          for lvl in yellow red; do
+            echo "== $lvl =="
+            python scripts/activate.py "$lvl" --dry-run > /dev/null
+          done
+      - name: Lint YAML parses
+        run: |
+          python - <<'PY'
+          import yaml, pathlib, sys
+          bad = 0
+          for p in pathlib.Path('.').rglob('*.y*ml'):
+              if '.github' in str(p): continue
+              try: yaml.safe_load(p.read_text())
+              except Exception as e:
+                  print(f"FATAL {p}: {e}"); bad = 1
+          sys.exit(bad)
+          PY

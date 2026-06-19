@@ -1,0 +1,59 @@
+# =============================================================================
+# roles/registry.yaml
+# -----------------------------------------------------------------------------
+# THE keystone file. Plans reference *roles*, never people. When someone
+# changes jobs, you edit ONE line here and every plan that references that
+# role is instantly correct. The PR that changes it is your audit trail.
+#
+# Invariants:
+#   - Every `holder` and `deputy` MUST be a key in people/directory.yaml
+#   - A role always has a deputy (nøkkelpersoner kan selv være utilgjengelige)
+#   - This file is org-chart-invariant: no department labels, only role IDs
+# =============================================================================
+
+roles:
+  avdelingsdirektor:
+    label: "Avdelingsdirektør"
+    holder: person.a
+    deputy: person.b
+    # Aktiverer plan ved rød, eier dialog mot DFD og kriseledelse
+
+  beredskapsleder:
+    label: "Beredskapsleder"
+    holder: person.b
+    deputy: person.c
+    # Bindeledd mot overordnet krise-/beredskapsplanverk
+
+  seksjonssjef_styring_stotte:
+    label: "Seksjonssjef Styring & støtte"
+    holder: person.b
+    deputy: person.c
+    # Plan-/innholdseier
+
+  incident_manager:
+    label: "Incident Manager"
+    holder: person.d
+    deputy: person.e
+    # Koordinerer produkt-/platformteam under hendelse, fører hendelseslogg
+
+  sikkerhetsansvarlig:
+    label: "Sikkerhetsansvarlig (BOD team sikkerhet)"
+    holder: person.c
+    deputy: person.f
+
+  kommunikasjon:
+    label: "Kommunikasjon / Pressevakt Digdir"
+    holder: duty.desk
+    deputy: null  # rotating duty desk; resolved via shared contact
+
+# Groups: fan-out targets that resolve to multiple roles/people at once.
+# Referenced by plans in `notifies:` lists.
+groups:
+  kriseledelse:
+    label: "Digdir kriseledelse"
+    members: [avdelingsdirektor, beredskapsleder, sikkerhetsansvarlig]
+  produkteiere:
+    label: "Produkteiere (berørte produkter)"
+    # Product owners are resolved per-incident from the affected component,
+    # not hard-coded. See plans/*/plan.yaml functions[].owner_role.
+    members: []

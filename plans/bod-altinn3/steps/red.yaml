@@ -1,0 +1,117 @@
+# =============================================================================
+# plans/bod-altinn3/steps/red.yaml
+# -----------------------------------------------------------------------------
+# The wizard. Each step becomes a checklist item in the incident Issue AND a
+# line in the mirrored Slack thread. Owners are role IDs, resolved to names at
+# activation time. Steps are ordered; `gate` controls progression.
+#
+# gate values:
+#   ack       — owner must acknowledge (tick box / Slack reaction)
+#   decision  — a named human must record an explicit yes/no + rationale.
+#               NEVER auto-advanced. This is where human-in-the-loop lives.
+#   action    — do the thing, then tick
+#   info      — informational, auto-ticks on activation (no human needed)
+#
+# `blocks_on` lets a step wait for an earlier step id.
+# =============================================================================
+
+playbook: red
+title: "Rød — A-hendelse aktivering"
+
+steps:
+  - id: confirm_activation
+    gate: decision
+    owner_role: avdelingsdirektor
+    text: >
+      Bekreft aktivering av RØD. Registrer kategori (drift/sikkerhet) og
+      berørt(e) funksjon(er). Ved mistanke om sikkerhetsaspekt: klassifiser
+      som sikkerhetshendelse inntil avklart.
+    records: [category, affected_functions]
+
+  - id: page_core_roles
+    gate: info
+    owner_role: incident_manager
+    text: "Nøkkelroller varslet automatisk (DM + telefon-fallback). Se varslingslogg i tråden."
+    blocks_on: [confirm_activation]
+
+  - id: assign_incident_manager
+    gate: ack
+    owner_role: incident_manager
+    text: "Incident Manager bekrefter og overtar koordinering. Stedfortreder ved fravær."
+    blocks_on: [confirm_activation]
+
+  - id: etabler_kriseledelse
+    gate: decision
+    owner_role: beredskapsleder
+    text: >
+      Beslutt om Digdir kriseledelse skal etableres etter beredskapsplanverket
+      (jf. punkt 1.4). JA/NEI + begrunnelse.
+    records: [decision, rationale]
+    blocks_on: [confirm_activation]
+
+  - id: security_assessment
+    gate: decision
+    owner_role: sikkerhetsansvarlig
+    text: >
+      KUN ved sikkerhetshendelse: vurder bevissikring, informasjonshåndtering,
+      og om brudd på personopplysningssikkerhet utløser 72t-vurdering mot
+      Datatilsynet. Start 72t-klokke hvis aktuelt.
+    when: "category == 'sikkerhet'"
+    records: [datatilsynet_clock_started]
+
+  - id: start_rto_clocks
+    gate: info
+    owner_role: incident_manager
+    text: "RTO/RPO-klokker startet for berørte funksjoner (se plan.yaml). Vises i tråden."
+    blocks_on: [confirm_activation]
+
+  - id: stabilisering
+    gate: action
+    owner_role: incident_manager
+    text: >
+      Følg DevOps-/hendelsesrutine: isoler feil, rull tilbake til siste stabile
+      versjon, aktiver overvåking. Ved datamistanke: stopp videre skriving,
+      gjenopprett fra siste sikre kopi (jf. RPO).
+
+  - id: notify_tjenesteeiere
+    gate: action
+    owner_role: incident_manager
+    text: "Publiser status til tjenesteeiere via Statuspage / Brukerstøtteforum."
+    blocks_on: [confirm_activation]
+
+  - id: external_comms_gate
+    gate: decision
+    owner_role: avdelingsdirektor
+    text: >
+      Avklar eksternt budskap. KUN avdelingsdirektør/Digdir kommunikasjon
+      uttaler seg utad. JA/NEI til mediehåndtering + omforent budskap.
+    records: [decision, message]
+
+  - id: verify_recovery
+    gate: action
+    owner_role: incident_manager
+    text: "Bekreft at berørte komponenter er gjenopprettet og overvåkes uten avvik."
+    blocks_on: [stabilisering]
+
+  - id: verify_data_integrity
+    gate: action
+    owner_role: incident_manager
+    text: "Bekreft dataintegritet (avstemming mot siste sikre versjon, jf. RPO)."
+    blocks_on: [verify_recovery]
+
+  - id: normalisering
+    gate: decision
+    owner_role: beredskapsleder
+    text: >
+      Beslutt tilbakeføring til normal drift. Forutsetning: tjeneste stabil og
+      verifisert, nødløsninger avviklet kontrollert, tjenesteeiere informert.
+    records: [decision, rationale]
+    blocks_on: [verify_data_integrity, external_comms_gate]
+
+  - id: close_and_log
+    gate: action
+    owner_role: incident_manager
+    text: >
+      Avslutt formelt: oppdater hendelseslogg, planlegg evaluering (kap. 8),
+      før erfaringer i endringslogg (kap. 9).
+    blocks_on: [normalisering]

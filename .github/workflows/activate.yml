@@ -1,0 +1,118 @@
+# =============================================================================
+# .github/workflows/activate.yml
+# -----------------------------------------------------------------------------
+# Two activation paths into one job:
+#   - workflow_dispatch    : the BUTTON (Actions tab dropdown, or Slack slash
+#                            command via a thin proxy that calls the GH API)
+#   - repository_dispatch  : EVENT-DRIVEN (Statuspage / Azure Monitor / TOK
+#                            tooling POSTs to the dispatches endpoint)
+#
+# The job: validate -> render -> create incident Issue -> post Slack.
+# It performs NOTIFICATION + LOGGING only. It never declares or stands down a
+# tier; humans do that in the wizard. State transitions are decision-gated.
+# =============================================================================
+name: Aktiver kontinuitetsplan
+
+on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: "Eskaleringsnivå"
+        required: true
+        type: choice
+        options: [yellow, red]
+      plan:
+        description: "Plan-ID"
+        required: true
+        default: bod-altinn3
+        type: string
+      category:
+        description: "Kategori (drift/sikkerhet)"
+        required: false
+        type: choice
+        options: ["", drift, sikkerhet]
+      affected:
+        description: "Berørte funksjoner (komma-separert)"
+        required: false
+        type: string
+  repository_dispatch:
+    types: [beredskap-activate]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+
+      - run: pip install pyyaml
+
+      # Resolve inputs from whichever trigger fired
+      - name: Resolve inputs
+        id: in
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "level=${{ github.event.client_payload.level }}"       >> "$GITHUB_OUTPUT"
+            echo "plan=${{ github.event.client_payload.plan }}"         >> "$GITHUB_OUTPUT"
+            echo "category=${{ github.event.client_payload.category }}" >> "$GITHUB_OUTPUT"
+            echo "affected=${{ github.event.client_payload.affected }}" >> "$GITHUB_OUTPUT"
+            echo "by=event:${{ github.event.client_payload.source }}"   >> "$GITHUB_OUTPUT"
+          else
+            echo "level=${{ inputs.level }}"       >> "$GITHUB_OUTPUT"
+            echo "plan=${{ inputs.plan }}"         >> "$GITHUB_OUTPUT"
+            echo "category=${{ inputs.category }}" >> "$GITHUB_OUTPUT"
+            echo "affected=${{ inputs.affected }}" >> "$GITHUB_OUTPUT"
+            echo "by=@${{ github.actor }}"         >> "$GITHUB_OUTPUT"
+          fi
+
+      # Fail fast if the registry is internally inconsistent
+      - name: Validate registry
+        run: python scripts/resolve.py validate
+
+      - name: Render issue + Slack artifacts
+        run: |
+          python scripts/activate.py "${{ steps.in.outputs.level }}" \
+            --plan "${{ steps.in.outputs.plan }}" \
+            --by "${{ steps.in.outputs.by }}" \
+            --category "${{ steps.in.outputs.category }}" \
+            --affected "${{ steps.in.outputs.affected }}"
+
+      - name: Create incident issue
+        id: issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('build/issue_body.md', 'utf8');
+            const level = '${{ steps.in.outputs.level }}';
+            const plan  = '${{ steps.in.outputs.plan }}';
+            const stamp = new Date().toISOString().slice(0,16).replace('T',' ');
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[${level.toUpperCase()}] ${plan} — ${stamp}`,
+              body,
+              labels: ['beredskap', `niva:${level}`, `plan:${plan}`],
+            });
+            core.setOutput('url', issue.data.html_url);
+            core.setOutput('number', issue.data.number);
+
+      # Re-render Slack now that we have the issue URL, then post.
+      - name: Post to Slack
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_INCIDENT_CHANNEL }}
+        run: |
+          python scripts/activate.py "${{ steps.in.outputs.level }}" \
+            --plan "${{ steps.in.outputs.plan }}" \
+            --by "${{ steps.in.outputs.by }}" \
+            --category "${{ steps.in.outputs.category }}" \
+            --affected "${{ steps.in.outputs.affected }}" \
+            --issue-url "${{ steps.issue.outputs.url }}"
+          python scripts/notify_slack.py build/slack.json
