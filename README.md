@@ -1,5 +1,13 @@
 # beredskap-ops
 
+> **Konseptutkast til diskusjon — ikke et endringsforslag til dette repoet.**
+> Dette er en delt *retning* for hvordan vi kan flytte prosess fra Word/Excel til
+> kjørbar kode, lagt som en egen gren kun for gjennomlesning. Den er **ikke** ment
+> å merges inn i `team-operativ-koordinering`, og det finnes bevisst ingen
+> pull request. Innholdet er et AI-generert førsteutkast, og alle navn, e-poster
+> og telefonnumre er placeholdere. Start med [VISION.md](VISION.md), deretter
+> [docs/DESIGN.md](docs/DESIGN.md).
+
 Kontinuitetsplaner som kjørbar kode. Planer bor i Git som `.yaml` (maskin) og
 `.md` (menneske); aktivering skjer på knapp eller hendelse og gir Slack-
 varsling, en veiviser og en tidsstemplet logg – uten å automatisere
