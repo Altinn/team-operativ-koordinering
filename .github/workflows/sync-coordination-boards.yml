@@ -3,12 +3,7 @@ name: Sync coordination boards
 # Adds open issues matching .github/boards.yml to their Projects v2 boards.
 #
 # Every run is a full sweep. item-add is idempotent, so a run that succeeds
-# repairs whatever earlier runs missed. An incremental --updated window would
-# silently drop every issue labelled overnight or at the weekend, and relies on
-# the scheduler firing on time, which GitHub does not guarantee.
-#
-# Requires secret PROJECT_PAT: classic PAT with `repo` + `project` scopes, owned
-# by a member of every searched org, SSO-authorised where enforced.
+# repairs whatever earlier runs missed.
 
 on:
   schedule:
