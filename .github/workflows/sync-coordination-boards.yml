@@ -7,9 +7,9 @@ name: Sync coordination boards
 
 on:
   schedule:
-    # Runs 05:00 UTC each weekday = 07:00 CEST, 06:00 CET. GitHub cron is UTC
-    # and has no DST, so it errs an hour early in winter rather than late.
-    - cron: "0 5 * * 1-5"
+    # Runs 06:30 UTC each weekday = 08:30 CEST, 07:30 CET. GitHub cron is UTC
+    # and has no DST, so the local time shifts by an hour across the year.
+    - cron: "30 6 * * 1-5"
   workflow_dispatch:
 
 concurrency:
