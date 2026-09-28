@@ -20,8 +20,7 @@ permissions:
 
 jobs:
   sync:
-    # Pinned rather than ubuntu-latest: yq ships in this image, so the job never
-    # downloads a binary while holding PROJECT_PAT.
+    # yq is preinstalled in this image; pinned so that stays true.
     runs-on: ubuntu-24.04
     env:
       MANIFEST: .github/boards.yml
