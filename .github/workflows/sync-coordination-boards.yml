@@ -20,7 +20,6 @@ permissions:
 
 jobs:
   sync:
-    # yq is preinstalled in this image; pinned so that stays true.
     runs-on: ubuntu-24.04
     env:
       MANIFEST: .github/boards.yml
