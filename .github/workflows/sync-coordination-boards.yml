@@ -1,33 +1,20 @@
 name: Sync coordination boards
 
-# Pulls issues matching each board's labels (in .github/boards.yml) into the
-# corresponding Projects v2 board.
+# Adds open issues matching .github/boards.yml to their Projects v2 boards.
 #
-# Design notes (learned the hard way):
-#   * `gh search issues` mis-parses qualifiers inside a positional query string,
-#     so we use FLAGS: --owner (repeatable, OR'd) and --label.
-#   * gh ANDs repeated --label, so to OR labels we run ONE search PER label and
-#     union the resulting issue URLs. Never pass multiple --label in one call
-#     expecting OR — it returns the AND (usually empty).
-#   * item-add is idempotent, so the union may contain an issue once per matching
-#     label; re-adding is a harmless no-op.
+# Every run is a full sweep. item-add is idempotent, so a run that succeeds
+# repairs whatever earlier runs missed. An incremental --updated window would
+# silently drop every issue labelled overnight or at the weekend, and relies on
+# the scheduler firing on time, which GitHub does not guarantee.
 #
-# REQUIRED SECRET: PROJECT_PAT
-#   Token that can (a) read issues in every searched org and (b) write items to
-#   the target projects. Classic PAT: scopes `repo` + `project`, from a user who
-#   is a member of every org in `owners`, SSO-authorised for each if enforced.
+# Requires secret PROJECT_PAT: classic PAT with `repo` + `project` scopes, owned
+# by a member of every searched org, SSO-authorised where enforced.
 
 on:
   schedule:
-    # Every 15 min, 06:00–16:00 UTC, Mon–Fri (~08–18 CEST / ~07–17 CET).
-    # GitHub cron is UTC and has no DST.
+    # Every 15 min, 06:00-16:45 UTC Mon-Fri. GitHub cron is UTC and has no DST.
     - cron: "*/15 6-16 * * 1-5"
   workflow_dispatch:
-    inputs:
-      full_backfill:
-        description: "Ignore the time window; sweep ALL open matching issues"
-        type: boolean
-        default: false
 
 concurrency:
   group: sync-coordination-boards
@@ -38,94 +25,112 @@ permissions:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest: yq ships in this image, so the job never
+    # downloads a binary while holding PROJECT_PAT.
+    runs-on: ubuntu-24.04
+    env:
+      MANIFEST: .github/boards.yml
     steps:
-      - name: Checkout (for boards.yml)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install yq
+      - name: Validate manifest
         run: |
-          sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
+          set -euo pipefail
 
-      - name: Compute time window
-        id: window
-        run: |
-          if [ "${{ inputs.full_backfill }}" = "true" ]; then
-            echo "since=" >> "$GITHUB_OUTPUT"
-            echo "Mode: FULL BACKFILL (no --updated filter)"
-          else
-            # 25-min lookback vs 15-min cadence = overlap so nothing slips between runs.
-            since=$(date -u -d '25 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
-            echo "since=$since" >> "$GITHUB_OUTPUT"
-            echo "Mode: incremental, --updated >=$since"
-          fi
+          count=$(yq '.boards | length' "$MANIFEST")
+          [ "$count" -ge 1 ] || { echo "::error::$MANIFEST defines no boards."; exit 1; }
+
+          bad=0
+          for b in $(seq 0 $((count - 1))); do
+            for f in name owner; do
+              [ -n "$(yq -r ".boards[$b].$f // \"\"" "$MANIFEST")" ] || {
+                echo "::error::boards[$b]: missing '$f'."; bad=1; }
+            done
+
+            project=$(yq -r ".boards[$b].project // \"\"" "$MANIFEST")
+            case "$project" in
+              ''|*[!0-9]*) project=0 ;;
+            esac
+            [ "$project" -gt 0 ] || {
+              echo "::error::boards[$b]: 'project' must be a positive integer."; bad=1; }
+
+            for f in owners labels; do
+              [ "$(yq -r ".boards[$b].$f | type" "$MANIFEST")" = "!!seq" ] &&
+              [ "$(yq ".boards[$b].$f | length" "$MANIFEST")" -ge 1 ] || {
+                echo "::error::boards[$b]: '$f' must be a non-empty list."; bad=1; }
+            done
+          done
+
+          [ "$bad" -eq 0 ] || { echo "::error::Manifest invalid; nothing synced."; exit 1; }
+          echo "Manifest OK: $count board(s)."
 
       - name: Sync boards
         env:
           GH_TOKEN: ${{ secrets.PROJECT_PAT }}
-          SINCE: ${{ steps.window.outputs.since }}
         run: |
           set -euo pipefail
 
-          board_count=$(yq '.boards | length' .github/boards.yml)
-          echo "Manifest has $board_count board(s)."
+          CAP=1000   # GitHub search returns at most 1000 results per query
+          failures=0
+          calls=0
 
-          for b in $(seq 0 $((board_count - 1))); do
-            name=$(yq -r ".boards[$b].name"    .github/boards.yml)
-            project=$(yq -r ".boards[$b].project" .github/boards.yml)
-            owner=$(yq -r ".boards[$b].owner"   .github/boards.yml)
+          count=$(yq '.boards | length' "$MANIFEST")
 
-            echo "::group::Board: $name (project $project, owned by $owner)"
+          for b in $(seq 0 $((count - 1))); do
+            name=$(yq -r ".boards[$b].name" "$MANIFEST")
+            project=$(yq -r ".boards[$b].project" "$MANIFEST")
+            owner=$(yq -r ".boards[$b].owner" "$MANIFEST")
+            echo "::group::$name (project $project, owner $owner)"
 
-            # Build repeated --owner args (OR'd by gh).
             owner_args=()
             while IFS= read -r o; do
-              [ -n "$o" ] && owner_args+=(--owner "$o")
-            done < <(yq -r ".boards[$b].owners[]" .github/boards.yml)
+              owner_args+=(--owner "$o")
+            done < <(yq -r ".boards[$b].owners[]" "$MANIFEST")
 
-            # --updated filter (incremental only). gh uses range syntax >=DATE.
-            updated_args=()
-            [ -n "$SINCE" ] && updated_args+=(--updated ">=$SINCE")
+            urls=$(mktemp)
+            labels=$(yq ".boards[$b].labels | length" "$MANIFEST")
 
-            # One search PER label; union URLs in an associative array (dedupe).
-            declare -A seen=()
-            label_count=$(yq ".boards[$b].labels | length" .github/boards.yml)
+            for l in $(seq 0 $((labels - 1))); do
+              label=$(yq -r ".boards[$b].labels[$l]" "$MANIFEST")
 
-            for l in $(seq 0 $((label_count - 1))); do
-              label=$(yq -r ".boards[$b].labels[$l]" .github/boards.yml)
-              echo "  Searching label: $label"
-
-              # Note: label passed via --label flag as a discrete arg — no
-              # search-string quoting; emoji/space match byte-for-byte.
-              while IFS= read -r url; do
-                [ -n "$url" ] && seen["$url"]=1
-              done < <(
-                gh search issues \
-                  "${owner_args[@]}" \
-                  --label "$label" \
-                  --state open \
-                  "${updated_args[@]}" \
-                  --limit 1000 \
-                  --json url --jq '.[].url'
-              )
-            done
-
-            echo "  Unique matching issues this run: ${#seen[@]}"
-
-            added=0
-            for url in "${!seen[@]}"; do
-              if gh project item-add "$project" --owner "$owner" --url "$url" >/dev/null 2>&1; then
-                added=$((added + 1))
-              else
-                echo "  ! could not add $url (already present, or permission issue)"
+              # Capture and check. Piping gh into `while read` hides its exit
+              # status from set -e, so a dead token would read as "0 issues"
+              # and the run would go green having synced nothing.
+              if ! hits=$(gh search issues "${owner_args[@]}" --label "$label" \
+                            --state open --limit "$CAP" \
+                            --json url --jq '.[].url' 2>&1); then
+                echo "::error::search failed for '$label': $hits"
+                failures=$((failures + 1))
+                continue
               fi
-            done
-            echo "  item-add succeeded for $added issue(s)."
 
-            unset seen
+              n=$(printf '%s' "$hits" | grep -c . || true)
+              echo "  $label: $n open"
+              [ "$n" -lt "$CAP" ] || echo "::warning::'$label' hit the $CAP-result cap; some issues not seen."
+              [ -z "$hits" ] || printf '%s\n' "$hits" >> "$urls"
+            done
+
+            sort -u -o "$urls" "$urls"
+            unique=$(grep -c . "$urls" || true)
+
+            ok=0
+            while IFS= read -r url; do
+              [ -n "$url" ] || continue
+              if err=$(gh project item-add "$project" --owner "$owner" --url "$url" 2>&1 >/dev/null); then
+                ok=$((ok + 1))
+              else
+                echo "::error::item-add failed for $url: $err"
+                failures=$((failures + 1))
+              fi
+            done < "$urls"
+            rm -f "$urls"
+
+            calls=$((calls + ok))
+            # item-add is idempotent, so this is all matching issues, not new ones.
+            echo "  $ok/$unique issues on board"
             echo "::endgroup::"
           done
 
-          echo "All boards processed."
+          # A failed run must not look like a quiet day with nothing to sync.
+          [ "$failures" -eq 0 ] || { echo "::error::$failures operation(s) failed."; exit 1; }
+          echo "Done: $calls item-add call(s) across $count board(s)."
