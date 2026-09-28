@@ -30,17 +30,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Board count, which also bounds the loop below; zero means a broken manifest.
+          # Number of boards to validate; also bounds the loop below.
           count=$(yq '.boards | length' "$MANIFEST")
           [ "$count" -ge 1 ] || { echo "::error::$MANIFEST defines no boards."; exit 1; }
 
+          # Check every board, collecting problems rather than failing on the first.
           bad=0
           for b in $(seq 0 $((count - 1))); do
+            # name and owner must be present and non-empty.
             for f in name owner; do
               [ -n "$(yq -r ".boards[$b].$f // \"\"" "$MANIFEST")" ] || {
                 echo "::error::boards[$b]: missing '$f'."; bad=1; }
             done
 
+            # project must be a positive integer; anything else is forced to 0 and fails.
             project=$(yq -r ".boards[$b].project // \"\"" "$MANIFEST")
             case "$project" in
               ''|*[!0-9]*) project=0 ;;
@@ -48,6 +51,7 @@ jobs:
             [ "$project" -gt 0 ] || {
               echo "::error::boards[$b]: 'project' must be a positive integer."; bad=1; }
 
+            # Both must be non-empty lists; an empty owners would search all of GitHub.
             for f in owners labels; do
               [ "$(yq -r ".boards[$b].$f | type" "$MANIFEST")" = "!!seq" ] &&
               [ "$(yq ".boards[$b].$f | length" "$MANIFEST")" -ge 1 ] || {
@@ -55,6 +59,7 @@ jobs:
             done
           done
 
+          # Stop here, so a bad manifest never reaches a board.
           [ "$bad" -eq 0 ] || { echo "::error::Manifest invalid; nothing synced."; exit 1; }
           echo "Manifest OK: $count board(s)."
 
@@ -64,26 +69,32 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Totals for the closing summary and the exit status.
           CAP=1000   # GitHub search returns at most 1000 results per query
           failures=0
           calls=0
 
+          # Re-read the manifest; the validate step ran in its own shell.
           count=$(yq '.boards | length' "$MANIFEST")
 
           for b in $(seq 0 $((count - 1))); do
+            # This board's settings, and a collapsible log group for it.
             name=$(yq -r ".boards[$b].name" "$MANIFEST")
             project=$(yq -r ".boards[$b].project" "$MANIFEST")
             owner=$(yq -r ".boards[$b].owner" "$MANIFEST")
             echo "::group::$name (project $project, owner $owner)"
 
+            # One --owner flag per org to search; gh ORs them together.
             owner_args=()
             while IFS= read -r o; do
               owner_args+=(--owner "$o")
             done < <(yq -r ".boards[$b].owners[]" "$MANIFEST")
 
+            # Every matching URL for this board lands in here.
             urls=$(mktemp)
             labels=$(yq ".boards[$b].labels | length" "$MANIFEST")
 
+            # One search per label: gh ANDs repeated --label, so OR means looping.
             for l in $(seq 0 $((labels - 1))); do
               label=$(yq -r ".boards[$b].labels[$l]" "$MANIFEST")
 
@@ -98,15 +109,18 @@ jobs:
                 continue
               fi
 
+              # Log the hit count, flag a truncated search, then bank the URLs.
               n=$(printf '%s' "$hits" | grep -c . || true)
               echo "  $label: $n open"
               [ "$n" -lt "$CAP" ] || echo "::warning::'$label' hit the $CAP-result cap; some issues not seen."
               [ -z "$hits" ] || printf '%s\n' "$hits" >> "$urls"
             done
 
+            # An issue carrying two of the labels was found twice.
             sort -u -o "$urls" "$urls"
             unique=$(grep -c . "$urls" || true)
 
+            # Add each issue, counting failures rather than aborting the board.
             ok=0
             while IFS= read -r url; do
               [ -n "$url" ] || continue
@@ -119,8 +133,8 @@ jobs:
             done < "$urls"
             rm -f "$urls"
 
-            calls=$((calls + ok))
             # item-add is idempotent, so this is all matching issues, not new ones.
+            calls=$((calls + ok))
             echo "  $ok/$unique issues on board"
             echo "::endgroup::"
           done
