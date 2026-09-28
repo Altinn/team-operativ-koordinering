@@ -31,6 +31,7 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Board count, which also bounds the loop below; zero means a broken manifest.
           count=$(yq '.boards | length' "$MANIFEST")
           [ "$count" -ge 1 ] || { echo "::error::$MANIFEST defines no boards."; exit 1; }
 
