@@ -7,9 +7,7 @@ name: Sync coordination boards
 
 on:
   schedule:
-    # Runs 05:30 UTC each weekday = 07:30 CEST, 06:30 CET. GitHub cron is UTC
-    # and has no DST; 05:30 is the latest slot still before 08:00 local in
-    # summer, when Norway is UTC+2. Moving it later breaks that.
+    # Runs 05:30 UTC each weekday: 07:30 in summer, 06:30 in winter.
     - cron: "30 5 * * 1-5"
   workflow_dispatch:
 
