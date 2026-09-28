@@ -1,0 +1,13 @@
+# Boards synced by .github/workflows/sync-coordination-boards.yml.
+
+boards:
+  - name: UU (accessibility)
+    project: 193
+    owner: Altinn          # org owning the board
+    owners:                # orgs to search
+      - Altinn
+      - digdir
+    labels:
+      - wcag
+      - area/accessibility
+      - "♿️ accessibility"   # U+267F + U+FE0F — must match the label byte-for-byte

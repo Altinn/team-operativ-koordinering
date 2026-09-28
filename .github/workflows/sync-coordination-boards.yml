@@ -1,0 +1,144 @@
+name: Sync coordination boards
+
+# Adds open issues matching .github/boards.yml to their Projects v2 boards.
+#
+# Every run is a full sweep. item-add is idempotent, so a run that succeeds
+# repairs whatever earlier runs missed.
+
+on:
+  schedule:
+    # Runs 05:30 UTC each weekday: 07:30 in summer, 06:30 in winter.
+    - cron: "30 5 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-coordination-boards
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    env:
+      MANIFEST: .github/boards.yml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate manifest
+        run: |
+          set -euo pipefail
+
+          # Counts the boards to validate, which also bounds the loop below.
+          count=$(yq '.boards | length' "$MANIFEST")
+          [ "$count" -ge 1 ] || { echo "::error::$MANIFEST defines no boards."; exit 1; }
+
+          # Checks every board, collecting problems rather than failing on the first.
+          bad=0
+          for b in $(seq 0 $((count - 1))); do
+            # Requires name and owner to be present and non-empty.
+            for f in name owner; do
+              [ -n "$(yq -r ".boards[$b].$f // \"\"" "$MANIFEST")" ] || {
+                echo "::error::boards[$b]: missing '$f'."; bad=1; }
+            done
+
+            # Requires project to be a positive integer; anything else becomes 0 and fails.
+            project=$(yq -r ".boards[$b].project // \"\"" "$MANIFEST")
+            case "$project" in
+              ''|*[!0-9]*) project=0 ;;
+            esac
+            [ "$project" -gt 0 ] || {
+              echo "::error::boards[$b]: 'project' must be a positive integer."; bad=1; }
+
+            # Requires both to be non-empty lists; an empty owners would search all of GitHub.
+            for f in owners labels; do
+              [ "$(yq -r ".boards[$b].$f | type" "$MANIFEST")" = "!!seq" ] &&
+              [ "$(yq ".boards[$b].$f | length" "$MANIFEST")" -ge 1 ] || {
+                echo "::error::boards[$b]: '$f' must be a non-empty list."; bad=1; }
+            done
+          done
+
+          # Stops here, so a bad manifest never reaches a board.
+          [ "$bad" -eq 0 ] || { echo "::error::Manifest invalid; nothing synced."; exit 1; }
+          echo "Manifest OK: $count board(s)."
+
+      - name: Sync boards
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_PAT }}
+        run: |
+          set -euo pipefail
+
+          # Tracks totals for the closing summary and the exit status.
+          CAP=1000   # GitHub search returns at most 1000 results per query
+          failures=0
+          calls=0
+
+          # Re-reads the manifest, since the validate step ran in its own shell.
+          count=$(yq '.boards | length' "$MANIFEST")
+
+          for b in $(seq 0 $((count - 1))); do
+            # Reads this board's settings and opens a collapsible log group for it.
+            name=$(yq -r ".boards[$b].name" "$MANIFEST")
+            project=$(yq -r ".boards[$b].project" "$MANIFEST")
+            owner=$(yq -r ".boards[$b].owner" "$MANIFEST")
+            echo "::group::$name (project $project, owner $owner)"
+
+            # Builds one --owner flag per org to search; gh ORs them together.
+            owner_args=()
+            while IFS= read -r o; do
+              owner_args+=(--owner "$o")
+            done < <(yq -r ".boards[$b].owners[]" "$MANIFEST")
+
+            # Collects every matching URL for this board.
+            urls=$(mktemp)
+            labels=$(yq ".boards[$b].labels | length" "$MANIFEST")
+
+            # Searches once per label, because gh ANDs repeated --label.
+            for l in $(seq 0 $((labels - 1))); do
+              label=$(yq -r ".boards[$b].labels[$l]" "$MANIFEST")
+
+              # Captures and checks. Piping gh into `while read` hides its exit
+              # status from set -e, so a dead token would read as "0 issues"
+              # and the run would go green having synced nothing.
+              if ! hits=$(gh search issues "${owner_args[@]}" --label "$label" \
+                            --state open --limit "$CAP" \
+                            --json url --jq '.[].url' 2>&1); then
+                echo "::error::search failed for '$label': $hits"
+                failures=$((failures + 1))
+                continue
+              fi
+
+              # Logs the hit count, flags a truncated search, then banks the URLs.
+              n=$(printf '%s' "$hits" | grep -c . || true)
+              echo "  $label: $n open"
+              [ "$n" -lt "$CAP" ] || echo "::warning::'$label' hit the $CAP-result cap; some issues not seen."
+              [ -z "$hits" ] || printf '%s\n' "$hits" >> "$urls"
+            done
+
+            # Dedupes, because an issue carrying two of the labels was found twice.
+            sort -u -o "$urls" "$urls"
+            unique=$(grep -c . "$urls" || true)
+
+            # Adds each issue, counting failures rather than aborting the board.
+            ok=0
+            while IFS= read -r url; do
+              [ -n "$url" ] || continue
+              if err=$(gh project item-add "$project" --owner "$owner" --url "$url" 2>&1 >/dev/null); then
+                ok=$((ok + 1))
+              else
+                echo "::error::item-add failed for $url: $err"
+                failures=$((failures + 1))
+              fi
+            done < "$urls"
+            rm -f "$urls"
+
+            # item-add is idempotent, so this reports all matching issues, not new ones.
+            calls=$((calls + ok))
+            echo "  $ok/$unique issues on board"
+            echo "::endgroup::"
+          done
+
+          # Fails the run, so a broken sync never looks like a quiet day with nothing to do.
+          [ "$failures" -eq 0 ] || { echo "::error::$failures operation(s) failed."; exit 1; }
+          echo "Done: $calls item-add call(s) across $count board(s)."
