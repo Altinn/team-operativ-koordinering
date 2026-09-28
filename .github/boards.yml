@@ -1,11 +1,4 @@
-# One entry per project board. The sync workflow adds every open issue in
-# `owners` carrying any of `labels` to Projects v2 project `project`.
-#
-# gh ANDs repeated --label, so the workflow runs one search per label and unions
-# the results. Don't collapse them into a single search — that returns the AND.
-#
-# `owners` must be non-empty: an unscoped search matches the label across all of
-# GitHub. The workflow validates this before searching.
+# Boards synced by .github/workflows/sync-coordination-boards.yml.
 
 boards:
   - name: UU (accessibility)
