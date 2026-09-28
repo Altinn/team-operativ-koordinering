@@ -7,7 +7,7 @@ name: Sync coordination boards
 
 on:
   schedule:
-    # Every 15 min, 06:00-16:45 UTC Mon-Fri. GitHub cron is UTC and has no DST.
+    # Runs every 15 min, 06:00-16:45 UTC Mon-Fri. GitHub cron is UTC, no DST.
     - cron: "*/15 6-16 * * 1-5"
   workflow_dispatch:
 
@@ -30,20 +30,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Number of boards to validate; also bounds the loop below.
+          # Counts the boards to validate, which also bounds the loop below.
           count=$(yq '.boards | length' "$MANIFEST")
           [ "$count" -ge 1 ] || { echo "::error::$MANIFEST defines no boards."; exit 1; }
 
-          # Check every board, collecting problems rather than failing on the first.
+          # Checks every board, collecting problems rather than failing on the first.
           bad=0
           for b in $(seq 0 $((count - 1))); do
-            # name and owner must be present and non-empty.
+            # Requires name and owner to be present and non-empty.
             for f in name owner; do
               [ -n "$(yq -r ".boards[$b].$f // \"\"" "$MANIFEST")" ] || {
                 echo "::error::boards[$b]: missing '$f'."; bad=1; }
             done
 
-            # project must be a positive integer; anything else is forced to 0 and fails.
+            # Requires project to be a positive integer; anything else becomes 0 and fails.
             project=$(yq -r ".boards[$b].project // \"\"" "$MANIFEST")
             case "$project" in
               ''|*[!0-9]*) project=0 ;;
@@ -51,7 +51,7 @@ jobs:
             [ "$project" -gt 0 ] || {
               echo "::error::boards[$b]: 'project' must be a positive integer."; bad=1; }
 
-            # Both must be non-empty lists; an empty owners would search all of GitHub.
+            # Requires both to be non-empty lists; an empty owners would search all of GitHub.
             for f in owners labels; do
               [ "$(yq -r ".boards[$b].$f | type" "$MANIFEST")" = "!!seq" ] &&
               [ "$(yq ".boards[$b].$f | length" "$MANIFEST")" -ge 1 ] || {
@@ -59,7 +59,7 @@ jobs:
             done
           done
 
-          # Stop here, so a bad manifest never reaches a board.
+          # Stops here, so a bad manifest never reaches a board.
           [ "$bad" -eq 0 ] || { echo "::error::Manifest invalid; nothing synced."; exit 1; }
           echo "Manifest OK: $count board(s)."
 
@@ -69,36 +69,36 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Totals for the closing summary and the exit status.
+          # Tracks totals for the closing summary and the exit status.
           CAP=1000   # GitHub search returns at most 1000 results per query
           failures=0
           calls=0
 
-          # Re-read the manifest; the validate step ran in its own shell.
+          # Re-reads the manifest, since the validate step ran in its own shell.
           count=$(yq '.boards | length' "$MANIFEST")
 
           for b in $(seq 0 $((count - 1))); do
-            # This board's settings, and a collapsible log group for it.
+            # Reads this board's settings and opens a collapsible log group for it.
             name=$(yq -r ".boards[$b].name" "$MANIFEST")
             project=$(yq -r ".boards[$b].project" "$MANIFEST")
             owner=$(yq -r ".boards[$b].owner" "$MANIFEST")
             echo "::group::$name (project $project, owner $owner)"
 
-            # One --owner flag per org to search; gh ORs them together.
+            # Builds one --owner flag per org to search; gh ORs them together.
             owner_args=()
             while IFS= read -r o; do
               owner_args+=(--owner "$o")
             done < <(yq -r ".boards[$b].owners[]" "$MANIFEST")
 
-            # Every matching URL for this board lands in here.
+            # Collects every matching URL for this board.
             urls=$(mktemp)
             labels=$(yq ".boards[$b].labels | length" "$MANIFEST")
 
-            # One search per label: gh ANDs repeated --label, so OR means looping.
+            # Searches once per label, because gh ANDs repeated --label.
             for l in $(seq 0 $((labels - 1))); do
               label=$(yq -r ".boards[$b].labels[$l]" "$MANIFEST")
 
-              # Capture and check. Piping gh into `while read` hides its exit
+              # Captures and checks. Piping gh into `while read` hides its exit
               # status from set -e, so a dead token would read as "0 issues"
               # and the run would go green having synced nothing.
               if ! hits=$(gh search issues "${owner_args[@]}" --label "$label" \
@@ -109,18 +109,18 @@ jobs:
                 continue
               fi
 
-              # Log the hit count, flag a truncated search, then bank the URLs.
+              # Logs the hit count, flags a truncated search, then banks the URLs.
               n=$(printf '%s' "$hits" | grep -c . || true)
               echo "  $label: $n open"
               [ "$n" -lt "$CAP" ] || echo "::warning::'$label' hit the $CAP-result cap; some issues not seen."
               [ -z "$hits" ] || printf '%s\n' "$hits" >> "$urls"
             done
 
-            # An issue carrying two of the labels was found twice.
+            # Dedupes, because an issue carrying two of the labels was found twice.
             sort -u -o "$urls" "$urls"
             unique=$(grep -c . "$urls" || true)
 
-            # Add each issue, counting failures rather than aborting the board.
+            # Adds each issue, counting failures rather than aborting the board.
             ok=0
             while IFS= read -r url; do
               [ -n "$url" ] || continue
@@ -133,12 +133,12 @@ jobs:
             done < "$urls"
             rm -f "$urls"
 
-            # item-add is idempotent, so this is all matching issues, not new ones.
+            # item-add is idempotent, so this reports all matching issues, not new ones.
             calls=$((calls + ok))
             echo "  $ok/$unique issues on board"
             echo "::endgroup::"
           done
 
-          # A failed run must not look like a quiet day with nothing to sync.
+          # Fails the run, so a broken sync never looks like a quiet day with nothing to do.
           [ "$failures" -eq 0 ] || { echo "::error::$failures operation(s) failed."; exit 1; }
           echo "Done: $calls item-add call(s) across $count board(s)."
